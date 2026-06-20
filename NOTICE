@@ -1,0 +1,75 @@
+PET2PRINT — Telemetry Dashboard & Demo Data Generator
+Copyright (c) 2026 <YOUR NAME / COPYRIGHT HOLDER>
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See the LICENSE file for the full license text.
+
+================================================================================
+THIRD-PARTY SOFTWARE
+================================================================================
+
+This product includes, or depends on, the following third-party open-source
+software. Their respective copyright notices and license terms are reproduced
+or referenced below.
+
+--------------------------------------------------------------------------------
+1. MQTT.js  —  BUNDLED (inlined into index.html)
+--------------------------------------------------------------------------------
+   Project:  https://github.com/mqttjs/MQTT.js
+   License:  MIT License
+   Copyright (c) MQTT.js contributors
+   (Contributors listed at https://github.com/mqttjs/MQTT.js#contributors)
+
+   >> Please confirm the exact copyright line against MQTT.js's own LICENSE.md
+      and paste it here verbatim — MIT requires the original notice be kept,
+      and the minified copy bundled in index.html appears to have had its
+      banner stripped.
+
+   Permission is hereby granted, free of charge, to any person obtaining a copy
+   of this software and associated documentation files (the "Software"), to deal
+   in the Software without restriction, including without limitation the rights
+   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+   copies of the Software, and to permit persons to whom the Software is
+   furnished to do so, subject to the following conditions:
+
+   The above copyright notice and this permission notice shall be included in
+   all copies or substantial portions of the Software.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE.
+
+--------------------------------------------------------------------------------
+2. Eclipse Paho MQTT Python Client (paho-mqtt)  —  RUNTIME DEPENDENCY (not bundled)
+--------------------------------------------------------------------------------
+   Used by:  demo_data_generation/fake_data.py
+   Fetched automatically by uv at run time via PEP 723 script metadata;
+   its source is NOT redistributed in this repository.
+   Project:  https://github.com/eclipse-paho/paho.mqtt.python
+   License:  Dual-licensed under the Eclipse Public License 2.0 (EPL-2.0)
+             and the Eclipse Distribution License 1.0 (EDL-1.0 / BSD-3-Clause).
+   Copyright (c) Eclipse Paho contributors.
+
+--------------------------------------------------------------------------------
+3. Fonts  —  LOADED AT RUNTIME from Google Fonts (not redistributed)
+--------------------------------------------------------------------------------
+   Space Grotesk   — SIL Open Font License 1.1   (please verify)
+   JetBrains Mono  — SIL Open Font License 1.1   (please verify)
+   Loaded from https://fonts.googleapis.com; font files are not stored in this
+   repository.
+
+================================================================================
+Notes
+================================================================================
+- Items marked "RUNTIME DEPENDENCY" / "LOADED AT RUNTIME" are not redistributed
+  inside this repository, so listing them is courtesy/transparency rather than a
+  strict license requirement. The MIT-licensed MQTT.js, however, IS redistributed
+  (inlined in index.html), so keeping its notice (item 1) is required.
+- This NOTICE file is a convenience summary. The authoritative terms are the
+  upstream licenses linked above and the LICENSE file in this repository.
