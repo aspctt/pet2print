@@ -1,0 +1,1 @@
+uv run $PSScriptRoot\fake_data.py
