@@ -122,6 +122,26 @@
   footer{margin-top:28px;color:var(--muted);font-size:12.5px;line-height:1.6}
   footer code{font-family:var(--mono);background:var(--surface);padding:1px 6px;border-radius:5px;font-size:11.5px}
 
+  /* log table */
+  .logcount{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--muted);
+    border:1px solid var(--border);border-radius:999px;padding:2px 9px;margin-left:4px;vertical-align:middle}
+  .logtable-wrap{border:1px solid var(--border);border-radius:12px;overflow:auto;max-height:48dvh;margin-top:8px}
+  .logtable{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12.5px}
+  .logtable thead th{position:sticky;top:0;background:var(--surface-2);color:var(--muted);
+    font-weight:600;letter-spacing:.05em;text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);
+    white-space:nowrap;font-size:10.5px;text-transform:uppercase}
+  .logtable th.num,.logtable td.num{text-align:right}
+  .logtable tbody td{padding:8px 12px;border-bottom:1px solid color-mix(in srgb,var(--border) 55%,transparent);white-space:nowrap}
+  .logtable tbody tr:last-child td{border-bottom:none}
+  .logtable tbody tr:nth-child(even){background:color-mix(in srgb,var(--surface-2) 45%,transparent)}
+  .logtable td.mono-dim{color:var(--muted)}
+  .logtable td.t-temp{color:var(--temp)}
+  .logtable td.t-rpm{color:var(--rpm)}
+  .logtable td.t-dia{color:var(--dia)}
+  .logtable td.oor{color:var(--err);font-weight:700}
+  .oor-flag{display:inline-block;margin-left:5px;color:var(--err);font-weight:700;font-size:11px;line-height:1}
+  .logempty{color:var(--muted);font-size:13px;text-align:center;padding:26px 0;margin:0}
+
   @media(max-width:720px){
     .cards{grid-template-columns:1fr}
     .grid-in{grid-template-columns:1fr}
@@ -141,6 +161,7 @@
     <div id="status" class="pill" data-state="idle"><span class="dot"></span><span id="statusText">offline</span></div>
     <div class="btn-row">
       <button id="settingsBtn" aria-label="Connection settings">&#9881; Settings</button>
+      <button id="logBtn" aria-label="Message log">&#9783; Log</button>
       <button id="demoBtn">Demo data</button>
       <button id="connectBtn" class="primary">Connect</button>
     </div>
@@ -163,12 +184,40 @@
         </div>
         <p class="hint">
           The URL is built as <code>wss://host:8884/mqtt</code> (HiveMQ Cloud requires TLS). If connection fails on path,
-          try clearing <code>/mqtt</code>. Expected payload: <code>{"temp":257,"rpm":35,"diameter":1.75}</code>.
+          try clearing <code>/mqtt</code>. Expected payload: <code>{"temp":200,"rpm":3.8,"diameter":1.75}</code>.
           Defaults are baked into the file; any change here is saved in this browser only.
         </p>
         <div class="modal-foot">
           <button id="settingsReset">Reset to defaults</button>
           <button id="settingsSave" class="primary">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="logModal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-label="Message log">
+      <div class="modal-head">
+        <h2>Message log <span class="logcount" id="logCount">0</span></h2>
+        <button class="x" id="logClose" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="logtable-wrap">
+          <table class="logtable">
+            <thead>
+              <tr><th>#</th><th>Date / time</th><th class="num">Temp&nbsp;°C</th><th class="num">RPM</th><th class="num">Dia&nbsp;mm</th></tr>
+            </thead>
+            <tbody id="logRows"></tbody>
+          </table>
+          <p class="logempty" id="logEmpty">No messages logged yet.</p>
+        </div>
+        <p class="hint">
+          Every received message is logged here and saved in this browser (survives reload).
+          Keeps the most recent <code id="logMaxLabel"></code> entries.
+        </p>
+        <div class="modal-foot">
+          <button id="logResetBtn">Reset log</button>
+          <button id="logResetAllBtn">Reset all saved data</button>
         </div>
       </div>
     </div>
@@ -181,7 +230,7 @@
       <div class="chartbox"><canvas id="chart-temp"></canvas></div>
     </div>
     <div class="card" id="card-rpm" style="--c:var(--rpm)">
-      <div class="top"><div class="name">Auger<b>·</b>RPM</div></div>
+      <div class="top"><div class="name">Auger<b>·</b>RPM</div><span class="flag" id="flag-rpm"></span></div>
       <div class="read"><span class="val" id="rpm">--</span><span class="unit">rpm</span></div>
       <div class="chartbox"><canvas id="chart-rpm"></canvas></div>
     </div>
@@ -194,7 +243,7 @@
 
   <footer>
     Last message: <code id="lastSeen">never</code> &nbsp;·&nbsp; messages: <code id="msgCount">0</code><br />
-    The temp chart marks the <code>255–260 °C</code> band; the diameter chart marks <code>1.75 ± 0.05 mm</code>. Cards turn red when out of range. Charts keep the last 60 readings.
+    The temp chart marks the <code>195–205 °C</code> band, RPM marks <code>3–5 rpm</code>, and diameter marks <code>1.75 ± 0.05 mm</code>. Cards turn red when out of range. Charts keep the last 60 readings.
   </footer>
 </div>
 
@@ -242,13 +291,15 @@ safe-buffer/index.js:
   "use strict";
 
   var MAX_POINTS = 60;
+  var MAX_LOG = 5000;            // most recent N received messages kept in the persisted log
   var LIMITS = {
-    temp:     { min:255, max:260 },   // °C — below 255 risks clogging
+    temp:     { min:195, max:205 },   // °C
+    rpm:      { min:3,   max:5   },   // below 3 / above 5 = red (good band 3.5–4)
     diameter: { min:1.70, max:1.80 }  // 1.75 mm ± 0.05
-    // rpm has no limit — not critical
   };
   var LIMIT_LINES = {
-    temp:     [255, 260],
+    temp:     [195, 205],
+    rpm:      [3, 5],
     diameter: [1.70, 1.75, 1.80]
   };
   var METRICS = ["temp","rpm","diameter"];
@@ -285,6 +336,21 @@ safe-buffer/index.js:
   }
   fields.forEach(loadField);
 
+  // ---------- message log persistence ----------
+  var LOG_KEY = "p2p_log";
+  var logEntries = [];
+  function loadLog(){
+    try {
+      var raw = localStorage.getItem(LOG_KEY);
+      var arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch(e){ return []; }
+  }
+  function saveLog(){
+    try { localStorage.setItem(LOG_KEY, JSON.stringify(logEntries)); } catch(e){}
+  }
+  logEntries = loadLog();
+
   // ---------- settings modal ----------
   var modal = document.getElementById("settingsModal");
   function openSettings(){ modal.hidden = false; }
@@ -300,6 +366,74 @@ safe-buffer/index.js:
   });
   modal.addEventListener("click", function(e){ if(e.target === modal) closeSettings(); });
   document.addEventListener("keydown", function(e){ if(e.key === "Escape" && !modal.hidden) closeSettings(); });
+
+  // ---------- log modal ----------
+  var logModal = document.getElementById("logModal");
+  var logRows  = document.getElementById("logRows");
+  var logEmpty = document.getElementById("logEmpty");
+  document.getElementById("logMaxLabel").textContent = MAX_LOG.toLocaleString();
+
+  function fmtTs(ts){ return new Date(ts).toLocaleString(); }
+  function outOfRange(limKey, v){
+    if(v === null) return false;
+    var lim = LIMITS[limKey];
+    return lim ? (v < lim.min || v > lim.max) : false;
+  }
+  function cellHtml(limKey, colorClass, v, digits){
+    if(v === null) return '<td class="num '+colorClass+' mono-dim">\u2014</td>';
+    var oor = outOfRange(limKey, v);
+    return '<td class="num '+colorClass+(oor ? ' oor' : '')+'">'+
+      v.toFixed(digits)+(oor ? '<span class="oor-flag" title="Out of range">!</span>' : '')+'</td>';
+  }
+
+  function appendLogRow(rec, scroll){
+    if(logEmpty) logEmpty.style.display = "none";
+    var tr = document.createElement("tr");
+    tr.innerHTML =
+      '<td class="mono-dim">'+rec.n+'</td>'+
+      '<td class="mono-dim">'+fmtTs(rec.ts)+'</td>'+
+      cellHtml("temp",    "t-temp", rec.temp, 1)+
+      cellHtml("rpm",     "t-rpm",  rec.rpm,  1)+
+      cellHtml("diameter","t-dia",  rec.dia,  2);
+    logRows.appendChild(tr);
+    if(scroll){ var w = logRows.closest(".logtable-wrap"); if(w) w.scrollTop = w.scrollHeight; }
+  }
+  function renderLog(){
+    logRows.innerHTML = "";
+    if(!logEntries.length){ if(logEmpty) logEmpty.style.display = ""; return; }
+    if(logEmpty) logEmpty.style.display = "none";
+    logEntries.forEach(function(rec){ appendLogRow(rec, false); });
+    var w = logRows.closest(".logtable-wrap"); if(w) w.scrollTop = w.scrollHeight;
+  }
+  function updateLogCount(){ document.getElementById("logCount").textContent = logEntries.length; }
+
+  function openLog(){ renderLog(); updateLogCount(); logModal.hidden = false; }
+  function closeLog(){ logModal.hidden = true; }
+  document.getElementById("logBtn").addEventListener("click", openLog);
+  document.getElementById("logClose").addEventListener("click", closeLog);
+  logModal.addEventListener("click", function(e){ if(e.target === logModal) closeLog(); });
+  document.addEventListener("keydown", function(e){ if(e.key === "Escape" && !logModal.hidden) closeLog(); });
+
+  document.getElementById("logResetBtn").addEventListener("click", function(){
+    if(!confirm("Clear all "+logEntries.length+" logged messages? This cannot be undone.")) return;
+    logEntries = [];
+    try { localStorage.removeItem(LOG_KEY); } catch(e){}
+    msgCount = 0;
+    document.getElementById("msgCount").textContent = "0";
+    renderLog(); updateLogCount();
+  });
+  document.getElementById("logResetAllBtn").addEventListener("click", function(){
+    if(!confirm("Reset everything? This clears the message log AND your saved connection settings (host, port, credentials, topic, path), restoring the built-in defaults.")) return;
+    logEntries = [];
+    msgCount = 0;
+    document.getElementById("msgCount").textContent = "0";
+    fields.forEach(function(id){
+      try { localStorage.removeItem("p2p_"+id); } catch(e){}
+      document.getElementById(id).value = DEFAULTS[id] || "";
+    });
+    try { localStorage.removeItem(LOG_KEY); } catch(e){}
+    renderLog(); updateLogCount();
+  });
 
   // ---------- charts ----------
   var charts = {};
@@ -365,7 +499,9 @@ safe-buffer/index.js:
   }
 
   // ---------- telemetry handling ----------
-  var msgCount = 0;
+  var msgCount = logEntries.length ? (logEntries[logEntries.length-1].n || logEntries.length) : 0;
+  document.getElementById("msgCount").textContent = msgCount;
+  if(logEntries.length) document.getElementById("lastSeen").textContent = fmtTs(logEntries[logEntries.length-1].ts);
   function handleData(payload){
     msgCount++;
     document.getElementById("msgCount").textContent = msgCount;
@@ -380,6 +516,21 @@ safe-buffer/index.js:
       if(!isNaN(num)) pushPoint(metric, num);
       applyLimit(metric, num);
     });
+    addLogEntry(payload);
+  }
+  function numOrNull(v){
+    if(v === undefined || v === null || v === "") return null;
+    var n = typeof v === "number" ? v : parseFloat(v);
+    return isNaN(n) ? null : n;
+  }
+  function addLogEntry(payload){
+    var rec = { n: msgCount, ts: Date.now(),
+      temp: numOrNull(payload.temp), rpm: numOrNull(payload.rpm), dia: numOrNull(payload.diameter) };
+    logEntries.push(rec);
+    if(logEntries.length > MAX_LOG) logEntries.splice(0, logEntries.length - MAX_LOG);
+    saveLog();
+    if(!logModal.hidden) appendLogRow(rec, true);
+    updateLogCount();
   }
 
   function applyLimit(metric, num){
@@ -472,12 +623,12 @@ safe-buffer/index.js:
   // ---------- demo mode ----------
   var demoTimer = null;
   var demoBtn = document.getElementById("demoBtn");
-  var base = { temp:257.5, rpm:35, diameter:1.75 };
+  var base = { temp:200, rpm:3.75, diameter:1.75 };
   function demoTick(){
-    base.temp += (Math.random()-.5)*1.6;  base.temp = clamp(base.temp,253,262);
-    base.rpm  += (Math.random()-.5)*1.5; base.rpm = clamp(base.rpm,28,42);
+    base.temp += (Math.random()-.5)*0.8;  base.temp = clamp(base.temp,193,207);
+    base.rpm  += (Math.random()-.5)*0.3;  base.rpm = clamp(base.rpm,2.6,5.4);
     base.diameter += (Math.random()-.5)*0.03; base.diameter = clamp(base.diameter,1.66,1.84);
-    handleData({ temp:+base.temp.toFixed(1), rpm:Math.round(base.rpm), diameter:+base.diameter.toFixed(2) });
+    handleData({ temp:+base.temp.toFixed(1), rpm:+base.rpm.toFixed(1), diameter:+base.diameter.toFixed(2) });
   }
   function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
   function startDemo(){
