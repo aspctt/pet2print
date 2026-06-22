@@ -181,7 +181,7 @@
       <div class="chartbox"><canvas id="chart-temp"></canvas></div>
     </div>
     <div class="card" id="card-rpm" style="--c:var(--rpm)">
-      <div class="top"><div class="name">Auger<b>·</b>RPM</div></div>
+      <div class="top"><div class="name">Auger<b>·</b>RPM</div><span class="flag" id="flag-rpm"></span></div>
       <div class="read"><span class="val" id="rpm">--</span><span class="unit">rpm</span></div>
       <div class="chartbox"><canvas id="chart-rpm"></canvas></div>
     </div>
@@ -194,7 +194,7 @@
 
   <footer>
     Last message: <code id="lastSeen">never</code> &nbsp;·&nbsp; messages: <code id="msgCount">0</code><br />
-    The temp chart marks the <code>255–260 °C</code> band; the diameter chart marks <code>1.75 ± 0.05 mm</code>. Cards turn red when out of range. Charts keep the last 60 readings.
+    Bands: temp <code>255–260 °C</code>, RPM <code>3–5</code>, diameter <code>1.75 ± 0.05 mm</code>. Cards turn red when out of range. Thickness has no sensor — the diameter card always shows simulated values. Charts keep the last 60 readings.
   </footer>
 </div>
 
@@ -244,11 +244,12 @@ safe-buffer/index.js:
   var MAX_POINTS = 60;
   var LIMITS = {
     temp:     { min:255, max:260 },   // °C — below 255 risks clogging
+    rpm:      { min:3,    max:5    }, // 3.5–4 good; red below 3 / above 5
     diameter: { min:1.70, max:1.80 }  // 1.75 mm ± 0.05
-    // rpm has no limit — not critical
   };
   var LIMIT_LINES = {
     temp:     [255, 260],
+    rpm:      [3, 5],
     diameter: [1.70, 1.75, 1.80]
   };
   var METRICS = ["temp","rpm","diameter"];
@@ -443,7 +444,12 @@ safe-buffer/index.js:
     });
     client.on("reconnect", function(){ setStatus("connecting","reconnecting…"); });
     client.on("message", function(topic, message){
-      try { handleData(JSON.parse(message.toString())); }
+      try {
+        var raw = JSON.parse(message.toString());
+        // broker publishes Turkish keys; thickness has no sensor, so diameter
+        // is intentionally NOT read from the broker (see diameterTick below)
+        handleData({ temp: raw.Sicaklik, rpm: raw.Devir_RPM });
+      }
       catch(e){ console.error("Bad payload:", message.toString(), e); }
     });
     client.on("error", function(err){
@@ -472,12 +478,11 @@ safe-buffer/index.js:
   // ---------- demo mode ----------
   var demoTimer = null;
   var demoBtn = document.getElementById("demoBtn");
-  var base = { temp:257.5, rpm:35, diameter:1.75 };
+  var base = { temp:257.5, rpm:3.75 };
   function demoTick(){
     base.temp += (Math.random()-.5)*1.6;  base.temp = clamp(base.temp,253,262);
-    base.rpm  += (Math.random()-.5)*1.5; base.rpm = clamp(base.rpm,28,42);
-    base.diameter += (Math.random()-.5)*0.03; base.diameter = clamp(base.diameter,1.66,1.84);
-    handleData({ temp:+base.temp.toFixed(1), rpm:Math.round(base.rpm), diameter:+base.diameter.toFixed(2) });
+    base.rpm  += (Math.random()-.5)*0.25; base.rpm  = clamp(base.rpm,2.8,5.2);
+    handleData({ temp:+base.temp.toFixed(1), rpm:+base.rpm.toFixed(1) });
   }
   function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
   function startDemo(){
@@ -498,6 +503,15 @@ safe-buffer/index.js:
   });
 
   markStale();
+
+  // Thickness sensor is unavailable on the rig, so the diameter card always
+  // runs on simulated values — even while connected to the broker.
+  var dBase = 1.75;
+  function diameterTick(){
+    dBase += (Math.random()-.5)*0.03; dBase = clamp(dBase,1.66,1.84);
+    handleData({ diameter:+dBase.toFixed(2) });
+  }
+  setInterval(diameterTick, 1000); diameterTick();
 })();
 </script>
 </body>
