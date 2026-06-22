@@ -628,7 +628,13 @@ safe-buffer/index.js:
     });
     client.on("reconnect", function(){ setStatus("connecting","reconnecting…"); });
     client.on("message", function(topic, message){
-      try { handleData(JSON.parse(message.toString())); }
+      try {
+        var payload = JSON.parse(message.toString());
+        // while connected, supply diameter from demo data (only on real telemetry frames,
+        // so echoed commands with no temp/rpm/diameter are still ignored downstream)
+        if(payload.temp !== undefined || payload.rpm !== undefined) payload.diameter = demoDiameter();
+        handleData(payload);
+      }
       catch(e){ console.error("Bad payload:", message.toString(), e); }
     });
     client.on("error", function(err){
@@ -665,6 +671,11 @@ safe-buffer/index.js:
     handleData({ temp:+base.temp.toFixed(1), rpm:+base.rpm.toFixed(1), diameter:+base.diameter.toFixed(2) });
   }
   function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
+  function demoDiameter(){
+    // diameter sensor isn't live yet -> supply a plausible demo value (random walk near 1.75mm)
+    base.diameter += (Math.random()-.5)*0.03; base.diameter = clamp(base.diameter,1.66,1.84);
+    return +base.diameter.toFixed(2);
+  }
   function startDemo(){
     if(client) disconnect();
     demoTimer = setInterval(demoTick, 1000); demoTick();
@@ -709,7 +720,9 @@ safe-buffer/index.js:
 
   function sendMotorAction(action){
     // action: "HIZLANDIR" (speed up) or "YAVASLAT" (slow down)
-    client.publish(val("topic"), JSON.stringify({ motor_aksiyonu: action }), function(err){
+    // wrapped with filler fields in fixed order: kalinlik, motor_aksiyonu, kaynak
+    var payload = { kalinlik: "filler", motor_aksiyonu: action, kaynak: "filler" };
+    client.publish(val("topic"), JSON.stringify(payload), function(err){
       if(err) console.error("publish motor_aksiyonu failed:", err);
     });
   }
