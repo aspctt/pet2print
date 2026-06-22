@@ -133,6 +133,7 @@
   .target-hint.err{color:var(--err)}
   .target-btn{padding:7px 16px;font-size:13px}
   .target-btn.primary{background:var(--rpm);color:#06201c;border-color:var(--rpm)}
+  .target-btn.running{background:var(--err);border-color:var(--err);color:#fff}
 
   footer{margin-top:28px;color:var(--muted);font-size:12.5px;line-height:1.6}
   footer code{font-family:var(--mono);background:var(--surface);padding:1px 6px;border-radius:5px;font-size:11.5px}
@@ -256,7 +257,7 @@
         <input type="range" id="targetSlider" min="0" max="15" step="0.5" value="4" aria-label="Target RPM" />
         <div class="target-actions">
           <span class="target-hint" id="targetHint"></span>
-          <button id="targetSend" class="primary target-btn">Send</button>
+          <button id="targetSend" class="primary target-btn">Set</button>
         </div>
       </div>
     </div>
@@ -528,9 +529,14 @@ safe-buffer/index.js:
   var msgCount = logEntries.length ? (logEntries[logEntries.length-1].n || logEntries.length) : 0;
   document.getElementById("msgCount").textContent = msgCount;
   if(logEntries.length) document.getElementById("lastSeen").textContent = fmtTs(logEntries[logEntries.length-1].ts);
+  var lastRpm = null;   // most recent rpm received from the broker (for closed-loop control)
   function handleData(payload){
-    // ignore messages with none of our metrics (e.g. our own echoed TargetRPM command)
+    // ignore messages with none of our metrics (e.g. our own echoed command)
     if(payload.temp === undefined && payload.rpm === undefined && payload.diameter === undefined) return;
+    if(payload.rpm !== undefined && payload.rpm !== null){
+      var _r = numOrNull(payload.rpm);
+      if(_r !== null) lastRpm = _r;
+    }
     msgCount++;
     document.getElementById("msgCount").textContent = msgCount;
     document.getElementById("lastSeen").textContent = new Date().toLocaleTimeString();
@@ -676,15 +682,22 @@ safe-buffer/index.js:
     else { startDemo(); }
   });
 
-  // ---------- target rpm ----------
+  // ---------- target rpm closed-loop control ----------
   var TARGET_KEY = "p2p_targetrpm";
   var SWEET_MIN = 3, SWEET_MAX = 5;
+  var DEADBAND = 0.25;        // within this of target -> send nothing (avoids oscillation)
+  var CTRL_INTERVAL = 500;    // ms between correction commands
   var targetSlider = document.getElementById("targetSlider");
   var targetVal    = document.getElementById("targetVal");
   var targetHint   = document.getElementById("targetHint");
   var targetSend   = document.getElementById("targetSend");
 
+  var targetRPM = null;       // the set target, held in memory
+  var ctrlTimer = null;       // interval handle while regulating
+  function controlRunning(){ return ctrlTimer !== null; }
+
   function refreshTarget(){
+    if(controlRunning()) return;   // don't clobber live status while regulating
     var v = parseFloat(targetSlider.value);
     targetVal.textContent = v.toFixed(1);
     var outside = v < SWEET_MIN || v > SWEET_MAX;
@@ -694,7 +707,54 @@ safe-buffer/index.js:
   }
   targetSlider.addEventListener("input", refreshTarget);
 
+  function sendMotorAction(action){
+    // action: "HIZLANDIR" (speed up) or "YAVASLAT" (slow down)
+    client.publish(val("topic"), JSON.stringify({ motor_aksiyonu: action }), function(err){
+      if(err) console.error("publish motor_aksiyonu failed:", err);
+    });
+  }
+  function setCtrlHint(stateTxt){
+    targetHint.textContent = "cur " + lastRpm.toFixed(1) + " \u2192 target " + targetRPM.toFixed(1) + "  \u00b7  " + stateTxt;
+    targetHint.className = "target-hint ok";
+  }
+  function controlTick(){
+    if(!client || !client.connected){ stopControl("lost broker connection", "err"); return; }
+    if(lastRpm === null){
+      targetHint.textContent = "regulating \u2192 waiting for rpm\u2026";
+      targetHint.className = "target-hint";
+      return;
+    }
+    var diff = lastRpm - targetRPM;
+    if(diff > DEADBAND){            // running too fast -> slow down
+      sendMotorAction("YAVASLAT");
+      setCtrlHint("YAVASLAT \u2193");
+    } else if(diff < -DEADBAND){    // running too slow -> speed up
+      sendMotorAction("HIZLANDIR");
+      setCtrlHint("HIZLANDIR \u2191");
+    } else {                       // within deadband -> hold
+      setCtrlHint("holding \u2713");
+    }
+  }
+
+  function startControl(v){
+    targetRPM = v;
+    try { localStorage.setItem(TARGET_KEY, String(v)); } catch(e){}
+    targetVal.textContent = v.toFixed(1);
+    targetSend.textContent = "Stop";
+    targetSend.classList.add("running");
+    controlTick();                 // act immediately, then on interval
+    ctrlTimer = setInterval(controlTick, CTRL_INTERVAL);
+  }
+  function stopControl(msg, cls){
+    if(ctrlTimer !== null){ clearInterval(ctrlTimer); ctrlTimer = null; }
+    targetSend.textContent = "Set";
+    targetSend.classList.remove("running");
+    if(msg){ targetHint.textContent = msg; targetHint.className = "target-hint " + (cls || ""); }
+    else { refreshTarget(); }
+  }
+
   targetSend.addEventListener("click", function(){
+    if(controlRunning()){ stopControl(); return; }   // toggle off
     var v = parseFloat(targetSlider.value);
     if(!client || !client.connected){
       targetHint.textContent = "connect to the broker first";
@@ -702,20 +762,9 @@ safe-buffer/index.js:
       return;
     }
     if(v < SWEET_MIN || v > SWEET_MAX){
-      if(!confirm("Target " + v.toFixed(1) + " rpm is outside the recommended 4 \u00b1 1 range. Send anyway?")) return;
+      if(!confirm("Target " + v.toFixed(1) + " rpm is outside the recommended 4 \u00b1 1 range. Set anyway?")) return;
     }
-    client.publish(val("topic"), JSON.stringify({ TargetRPM: v }), function(err){
-      if(err){
-        targetHint.textContent = "send failed";
-        targetHint.className = "target-hint err";
-        console.error("publish TargetRPM failed:", err);
-      } else {
-        try { localStorage.setItem(TARGET_KEY, String(v)); } catch(e){}
-        targetHint.textContent = "sent \u2713 " + v.toFixed(1) + " rpm";
-        targetHint.className = "target-hint ok";
-        setTimeout(refreshTarget, 2500);
-      }
-    });
+    startControl(v);
   });
 
   (function initTarget(){
