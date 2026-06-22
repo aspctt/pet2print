@@ -697,7 +697,7 @@ safe-buffer/index.js:
   var TARGET_KEY = "p2p_targetrpm";
   var SWEET_MIN = 3, SWEET_MAX = 5;
   var DEADBAND = 0.25;        // within this of target -> send nothing (avoids oscillation)
-  var CTRL_INTERVAL = 500;    // ms between correction commands
+  var CTRL_INTERVAL = 1000;    // ms between correction commands
   var targetSlider = document.getElementById("targetSlider");
   var targetVal    = document.getElementById("targetVal");
   var targetHint   = document.getElementById("targetHint");
