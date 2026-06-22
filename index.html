@@ -721,7 +721,7 @@ safe-buffer/index.js:
   function sendMotorAction(action){
     // action: "HIZLANDIR" (speed up) or "YAVASLAT" (slow down)
     // wrapped with filler fields in fixed order: kalinlik, motor_aksiyonu, kaynak
-    var payload = { kalinlik: "filler", motor_aksiyonu: action, kaynak: "filler" };
+    var payload = { kalinlik: 3.12, motor_aksiyonu: action, kaynak: "Edge_Phone" };
     client.publish(val("topic"), JSON.stringify(payload), function(err){
       if(err) console.error("publish motor_aksiyonu failed:", err);
     });
